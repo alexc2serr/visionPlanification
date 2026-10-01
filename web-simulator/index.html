@@ -1,0 +1,1161 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VisionPlanification - Precision On-Device CV & AR Remodeling</title>
+  
+  <!-- TensorFlow.js y Modelo de Detección de Objetos en Tiempo Real (On-Device WebGL) -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.17.0/dist/tf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
+
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      user-select: none;
+    }
+
+    body {
+      background-color: #080A0D;
+      color: #FFFFFF;
+      overflow: hidden;
+      width: 100vw;
+      height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+
+    #deviceContainer {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      max-width: 480px;
+      max-height: 960px;
+      background: #000;
+      overflow: hidden;
+      box-shadow: 0 30px 70px -15px rgba(0, 240, 255, 0.3);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+    }
+
+    @media (min-width: 500px) {
+      #deviceContainer {
+        border-radius: 40px;
+        height: 94vh;
+      }
+    }
+
+    /* Video Feed */
+    #cameraFeed {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      transform: scaleX(-1); /* Efecto espejo */
+    }
+
+    /* AR Canvas Overlay */
+    #arCanvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 5;
+    }
+
+    /* Glassmorphism Classes (Stitch Tokens) */
+    .glass-pill {
+      background: rgba(20, 26, 35, 0.88);
+      backdrop-filter: blur(28px);
+      -webkit-backdrop-filter: blur(28px);
+      border: 1.2px solid rgba(255, 255, 255, 0.2);
+      border-radius: 14px;
+      padding: 6px 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* Top HUD */
+    #topHud {
+      position: absolute;
+      top: 18px;
+      left: 14px;
+      right: 14px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      z-index: 20;
+    }
+
+    .fps-text { color: #10B981; font-weight: 800; font-family: monospace; font-size: 13px; }
+    .latency-text { color: #00F0FF; font-weight: 800; font-family: monospace; font-size: 12px; }
+    .delegate-tag {
+      background: rgba(0, 240, 255, 0.22);
+      color: #00F0FF;
+      font-size: 10px;
+      font-weight: 700;
+      padding: 2px 7px;
+      border-radius: 6px;
+    }
+
+    .rec-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #64748B;
+      transition: background 0.3s;
+    }
+
+    .recording .rec-dot {
+      background: #EF4444;
+      animation: pulse 0.8s infinite alternate;
+    }
+
+    @keyframes pulse {
+      from { opacity: 0.3; transform: scale(0.85); }
+      to { opacity: 1; transform: scale(1.15); }
+    }
+
+    /* Corredor de Paso Guía Visual */
+    #corridorGuide {
+      position: absolute;
+      top: 0;
+      left: 28%;
+      width: 44%;
+      height: 100%;
+      border-left: 1px dashed rgba(0, 240, 255, 0.25);
+      border-right: 1px dashed rgba(0, 240, 255, 0.25);
+      background: rgba(0, 240, 255, 0.03);
+      pointer-events: none;
+      z-index: 4;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      padding-top: 75px;
+    }
+
+    #corridorLabel {
+      font-size: 10px;
+      color: rgba(0, 240, 255, 0.7);
+      background: rgba(13, 17, 23, 0.8);
+      padding: 3px 8px;
+      border-radius: 8px;
+      border: 1px solid rgba(0, 240, 255, 0.3);
+      letter-spacing: 0.5px;
+    }
+
+    /* Bottom HUD */
+    #bottomHud {
+      position: absolute;
+      bottom: 20px;
+      left: 14px;
+      right: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      z-index: 20;
+    }
+
+    /* Floating Metrics Panel (Stitch spec) */
+    #metricsPanel {
+      background: rgba(13, 17, 24, 0.94);
+      backdrop-filter: blur(30px);
+      -webkit-backdrop-filter: blur(30px);
+      border: 1.2px solid rgba(255, 255, 255, 0.18);
+      border-radius: 26px;
+      padding: 14px 16px;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      cursor: pointer;
+    }
+
+    .panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .circular-gauge {
+      width: 44px;
+      height: 44px;
+      position: relative;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+
+    .circular-gauge svg {
+      width: 100%;
+      height: 100%;
+      transform: rotate(-90deg);
+    }
+
+    .circular-gauge circle {
+      fill: none;
+      stroke-width: 4;
+      cx: 22;
+      cy: 22;
+      r: 18;
+    }
+
+    .circle-bg { stroke: rgba(0, 240, 255, 0.18); }
+    .circle-prog {
+      stroke: #00F0FF;
+      stroke-dasharray: 113;
+      stroke-dashoffset: 20;
+      transition: stroke-dashoffset 0.4s ease;
+      stroke-linecap: round;
+    }
+
+    .gauge-score {
+      position: absolute;
+      font-size: 11px;
+      font-weight: 800;
+      color: #FFF;
+    }
+
+    .panel-details {
+      display: none;
+      margin-top: 12px;
+      border-top: 1px solid rgba(255, 255, 255, 0.1);
+      padding-top: 12px;
+      flex-direction: column;
+      gap: 9px;
+    }
+
+    #metricsPanel.expanded .panel-details {
+      display: flex;
+    }
+
+    .metric-row { display: flex; flex-direction: column; gap: 4px; }
+    .metric-labels {
+      display: flex;
+      justify-content: space-between;
+      font-size: 11px;
+      color: #94A3B8;
+    }
+
+    .metric-bar-bg {
+      width: 100%;
+      height: 5px;
+      background: rgba(255, 255, 255, 0.15);
+      border-radius: 4px;
+      overflow: hidden;
+    }
+
+    .metric-bar-fill {
+      height: 100%;
+      border-radius: 4px;
+      transition: width 0.35s ease;
+    }
+
+    /* Controls Bar */
+    #controlsBar {
+      background: rgba(13, 17, 24, 0.94);
+      backdrop-filter: blur(28px);
+      -webkit-backdrop-filter: blur(28px);
+      border: 1.2px solid rgba(255, 255, 255, 0.18);
+      border-radius: 22px;
+      padding: 9px 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    #presetsScroll {
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+    #presetsScroll::-webkit-scrollbar { display: none; }
+
+    .preset-pill {
+      white-space: nowrap;
+      padding: 7px 13px;
+      font-size: 12px;
+      font-weight: 600;
+      border-radius: 14px;
+      background: rgba(30, 41, 59, 0.6);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      color: #FFFFFF;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .preset-pill.active {
+      background: #00F0FF;
+      color: #080A0D;
+      border-color: #00F0FF;
+      box-shadow: 0 0 14px rgba(0, 240, 255, 0.4);
+    }
+
+    #shutterBtn {
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      background: #FFFFFF;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      flex-shrink: 0;
+      transition: transform 0.15s ease;
+    }
+    #shutterBtn:active { transform: scale(0.92); }
+
+    .shutter-inner {
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: #EF4444;
+      transition: all 0.2s ease;
+    }
+
+    .recording #shutterBtn .shutter-inner {
+      width: 16px;
+      height: 16px;
+      border-radius: 4px;
+    }
+
+    #statusBanner {
+      position: absolute;
+      top: 64px;
+      left: 14px;
+      right: 14px;
+      background: rgba(0, 240, 255, 0.18);
+      border: 1px solid rgba(0, 240, 255, 0.45);
+      border-radius: 12px;
+      padding: 6px 12px;
+      font-size: 11px;
+      color: #00F0FF;
+      text-align: center;
+      z-index: 25;
+      backdrop-filter: blur(12px);
+    }
+
+    #startOverlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(8, 10, 13, 0.96);
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      padding: 32px;
+      text-align: center;
+      gap: 16px;
+      z-index: 50;
+    }
+
+    .primary-btn {
+      background: #00F0FF;
+      color: #080A0D;
+      font-weight: 800;
+      padding: 14px 28px;
+      border-radius: 16px;
+      border: none;
+      font-size: 15px;
+      cursor: pointer;
+      box-shadow: 0 0 22px rgba(0, 240, 255, 0.45);
+      transition: all 0.2s ease;
+    }
+  </style>
+</head>
+<body>
+
+  <div id="deviceContainer">
+    <!-- Real Camera Video Element -->
+    <video id="cameraFeed" autoplay playsinline muted></video>
+
+    <!-- Corredor de Circulación Guía -->
+    <div id="corridorGuide">
+      <div id="corridorLabel">Corredor de Paso Central</div>
+    </div>
+
+    <!-- AR Canvas: Real Object Detection & Spatial Remodel Projection -->
+    <canvas id="arCanvas"></canvas>
+
+    <!-- Status Banner -->
+    <div id="statusBanner">🧠 Calibrando Red Neuronal On-Device y Pipeline AR...</div>
+
+    <!-- Top HUD -->
+    <div id="topHud">
+      <div class="glass-pill">
+        <span class="fps-text" id="fpsVal">--</span>
+        <span style="font-size: 10px; color: #94A3B8;">FPS</span>
+        <span style="color: rgba(255,255,255,0.3)">•</span>
+        <span class="latency-text" id="latVal">-- ms</span>
+        <span style="color: rgba(255,255,255,0.3)">•</span>
+        <span class="delegate-tag" id="delegateTag">GPU WebGL ⚡</span>
+      </div>
+
+      <div class="glass-pill" id="recPill">
+        <div class="rec-dot"></div>
+        <span style="font-size: 11px; font-weight: 800; letter-spacing: 0.5px;" id="recStatus">STANDBY</span>
+        <span style="font-size: 12px; font-family: monospace; display: none;" id="recTimer">00:00</span>
+      </div>
+    </div>
+
+    <!-- Bottom HUD -->
+    <div id="bottomHud">
+      <!-- Dynamic Floating Metrics Panel -->
+      <div id="metricsPanel" onclick="toggleMetricsPanel()">
+        <div class="panel-header">
+          <div style="display: flex; align-items: center; gap: 12px;">
+            <div class="circular-gauge">
+              <svg>
+                <circle class="circle-bg" />
+                <circle class="circle-prog" id="effGaugeProg" />
+              </svg>
+              <span class="gauge-score" id="effScoreText">--%</span>
+            </div>
+            <div>
+              <div style="font-size: 14px; font-weight: 700; display: flex; align-items: center; gap: 6px;">
+                Eficiencia Espacial <span style="color: #00F0FF; font-size: 12px;">✨</span>
+              </div>
+              <div style="font-size: 11px; color: #94A3B8;" id="panelHint">Toca para ver desglose de remodelación</div>
+            </div>
+          </div>
+          <span style="color: #94A3B8; font-size: 14px;" id="chevronIcon">▲</span>
+        </div>
+
+        <div class="panel-details">
+          <div class="metric-row">
+            <div class="metric-labels"><span>Armonía & Balance Lateral</span><span id="valHarmony">--%</span></div>
+            <div class="metric-bar-bg"><div class="metric-bar-fill" id="barHarmony" style="width: 0%; background: #F43F5E;"></div></div>
+          </div>
+          <div class="metric-row">
+            <div class="metric-labels"><span>Despeje de Corredor (Tráfico)</span><span id="valTraffic">--%</span></div>
+            <div class="metric-bar-bg"><div class="metric-bar-fill" id="barTraffic" style="width: 0%; background: #10B981;"></div></div>
+          </div>
+          <div class="metric-row">
+            <div class="metric-labels"><span>Saturación de Espacio</span><span id="valClutter">--%</span></div>
+            <div class="metric-bar-bg"><div class="metric-bar-fill" id="barClutter" style="width: 0%; background: #F59E0B;"></div></div>
+          </div>
+          <div style="margin-top: 6px; font-size: 12px; font-weight: 700; color: #00F0FF;">Directrices de Remodelación Detectadas:</div>
+          <div id="suggestionsList" style="font-size: 11px; line-height: 1.4; color: #E2E8F0; display: flex; flex-direction: column; gap: 4px;">
+            <div>• Apunte hacia el mobiliario para calcular la distribución del espacio.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Presets & Shutter Bar -->
+      <div id="controlsBar">
+        <div id="presetsScroll">
+          <div class="preset-pill active" onclick="selectPreset('flow', this)">Optimizar Flujo</div>
+          <div class="preset-pill" onclick="selectPreset('declutter', this)">Minimalista</div>
+          <div class="preset-pill" onclick="selectPreset('harmony', this)">Armonía Estética</div>
+          <div class="preset-pill" onclick="selectPreset('staging', this)">Home Staging</div>
+        </div>
+
+        <div id="shutterBtn" onclick="toggleRecording()" title="Iniciar / Detener Grabación">
+          <div class="shutter-inner"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Start Modal -->
+    <div id="startOverlay">
+      <div style="font-size: 44px;">📷</div>
+      <h2 style="font-size: 20px; font-weight: 800;">Vision Remodel AI</h2>
+      <p style="font-size: 13px; color: #94A3B8; line-height: 1.5;">
+        Calibración de visión artificial y remodelación espacial en tiempo real con <b>alineación geométrica exacta</b> y supresión de falsos positivos.
+      </p>
+      <button class="primary-btn" onclick="startSystem()">Activar Cámara y Probar</button>
+    </div>
+  </div>
+
+  <script>
+    const video = document.getElementById('cameraFeed');
+    const canvas = document.getElementById('arCanvas');
+    const ctx = canvas.getContext('2d');
+    const statusBanner = document.getElementById('statusBanner');
+    const fpsVal = document.getElementById('fpsVal');
+    const latVal = document.getElementById('latVal');
+    const recPill = document.getElementById('recPill');
+    const recStatus = document.getElementById('recStatus');
+    const recTimer = document.getElementById('recTimer');
+    const metricsPanel = document.getElementById('metricsPanel');
+    const startOverlay = document.getElementById('startOverlay');
+
+    let netModel = null;
+    let isDetecting = false;
+    let smoothedDetections = [];
+    let currentPreset = 'flow';
+
+    let lastFrameTime = performance.now();
+    let frameCount = 0;
+    let fps = 30.0;
+
+    let isRecording = false;
+    let recStartTime = 0;
+    let recTimerInterval = null;
+    let mediaRecorder = null;
+    let recordedChunks = [];
+
+    // =========================================================================
+    //  MAPA COMPLETO DE 80 CLASES COCO + HEURÍSTICAS DE REMODELACIÓN ESPACIAL
+    //  Cada clase está mapeada a un nombre en español, su categoría espacial
+    //  y si es mobiliario desplazable (isFurniture) para la lógica AR.
+    // =========================================================================
+    const SPATIAL_CLASS_MAP = {
+      // ── MOBILIARIO PRINCIPAL (Remodelable / Desplazable) ──────────────────
+      'chair':         { name: 'Silla',            cat: 'furniture', isFurniture: true  },
+      'couch':         { name: 'Sofá / Asiento',   cat: 'furniture', isFurniture: true  },
+      'bed':           { name: 'Cama',             cat: 'furniture', isFurniture: true  },
+      'dining table':  { name: 'Mesa',             cat: 'furniture', isFurniture: true  },
+      'toilet':        { name: 'Sanitario',        cat: 'furniture', isFurniture: true  },
+      'sink':          { name: 'Lavabo / Fregadero',cat: 'furniture', isFurniture: true },
+      'refrigerator':  { name: 'Nevera / Armario', cat: 'furniture', isFurniture: true  },
+      'oven':          { name: 'Horno / Mueble',   cat: 'furniture', isFurniture: true  },
+      'microwave':     { name: 'Microondas',       cat: 'furniture', isFurniture: false },
+      'toaster':       { name: 'Tostadora',        cat: 'furniture', isFurniture: false },
+      'bench':         { name: 'Banco / Estante',  cat: 'furniture', isFurniture: true  },
+
+      // ── ELECTRÓNICA Y EQUIPAMIENTO ────────────────────────────────────────
+      'tv':            { name: 'Pantalla / Monitor',cat: 'electronics', isFurniture: true  },
+      'laptop':        { name: 'Portátil',          cat: 'electronics', isFurniture: false },
+      'keyboard':      { name: 'Teclado',           cat: 'electronics', isFurniture: false },
+      'mouse':         { name: 'Ratón',             cat: 'electronics', isFurniture: false },
+      'remote':        { name: 'Mando / Control',   cat: 'electronics', isFurniture: false },
+      'cell phone':    { name: 'Teléfono Móvil',    cat: 'electronics', isFurniture: false },
+
+      // ── OBJETOS DE MESA / ACCESORIOS ──────────────────────────────────────
+      'bottle':        { name: 'Botella',            cat: 'tabletop', isFurniture: false },
+      'wine glass':    { name: 'Copa / Vaso',        cat: 'tabletop', isFurniture: false },
+      'cup':           { name: 'Taza / Vaso',        cat: 'tabletop', isFurniture: false },
+      'fork':          { name: 'Cubierto',           cat: 'tabletop', isFurniture: false },
+      'knife':         { name: 'Cuchillo',           cat: 'tabletop', isFurniture: false },
+      'spoon':         { name: 'Cuchara',            cat: 'tabletop', isFurniture: false },
+      'bowl':          { name: 'Cuenco / Bol',       cat: 'tabletop', isFurniture: false },
+      'vase':          { name: 'Jarrón / Florero',   cat: 'tabletop', isFurniture: false },
+      'scissors':      { name: 'Tijeras',            cat: 'tabletop', isFurniture: false },
+      'clock':         { name: 'Reloj',              cat: 'tabletop', isFurniture: false },
+      'hair drier':    { name: 'Secador',            cat: 'tabletop', isFurniture: false },
+      'toothbrush':    { name: 'Cepillo de Dientes', cat: 'tabletop', isFurniture: false },
+
+      // ── EQUIPAJE / ALMACENAMIENTO (Cajoneras, mochilas, maletas…) ─────────
+      'backpack':      { name: 'Mochila',           cat: 'storage', isFurniture: false },
+      'handbag':       { name: 'Bolso / Bandolera',  cat: 'storage', isFurniture: false },
+      'suitcase':      { name: 'Maleta / Maletín',   cat: 'storage', isFurniture: true  },
+      'umbrella':      { name: 'Paraguas',           cat: 'storage', isFurniture: false },
+      'tie':           { name: 'Corbata / Complemento', cat: 'storage', isFurniture: false },
+
+      // ── DECORACIÓN / ELEMENTOS ESTÉTICOS ──────────────────────────────────
+      'potted plant':  { name: 'Planta Decorativa', cat: 'decor', isFurniture: false },
+      'book':          { name: 'Libro / Documento',  cat: 'decor', isFurniture: false },
+      'teddy bear':    { name: 'Peluche / Decoración', cat: 'decor', isFurniture: false },
+
+      // ── COMIDA (Indicador de desorden en superficies) ─────────────────────
+      'banana':        { name: 'Fruta / Comida',     cat: 'food', isFurniture: false },
+      'apple':         { name: 'Fruta / Comida',     cat: 'food', isFurniture: false },
+      'sandwich':      { name: 'Comida en Mesa',     cat: 'food', isFurniture: false },
+      'orange':        { name: 'Fruta / Comida',     cat: 'food', isFurniture: false },
+      'broccoli':      { name: 'Comida',             cat: 'food', isFurniture: false },
+      'carrot':        { name: 'Comida',             cat: 'food', isFurniture: false },
+      'hot dog':       { name: 'Comida en Mesa',     cat: 'food', isFurniture: false },
+      'pizza':         { name: 'Comida en Mesa',     cat: 'food', isFurniture: false },
+      'donut':         { name: 'Comida en Mesa',     cat: 'food', isFurniture: false },
+      'cake':          { name: 'Comida en Mesa',     cat: 'food', isFurniture: false },
+
+      // ── PERSONAS ──────────────────────────────────────────────────────────
+      'person':        { name: 'Persona / Ocupante', cat: 'person', isFurniture: false },
+
+      // ── VEHÍCULOS / EXTERIOR (Casco de moto → motorcycle) ─────────────────
+      'bicycle':       { name: 'Bicicleta',          cat: 'vehicle', isFurniture: true  },
+      'car':           { name: 'Coche / Vehículo',   cat: 'vehicle', isFurniture: true  },
+      'motorcycle':    { name: 'Moto / Casco de Moto', cat: 'vehicle', isFurniture: true  },
+      'airplane':      { name: 'Avión / Maqueta',    cat: 'vehicle', isFurniture: false },
+      'bus':           { name: 'Autobús',            cat: 'vehicle', isFurniture: true  },
+      'train':         { name: 'Tren / Maqueta',     cat: 'vehicle', isFurniture: false },
+      'truck':         { name: 'Camión / Furgoneta', cat: 'vehicle', isFurniture: true  },
+      'boat':          { name: 'Barco / Maqueta',    cat: 'vehicle', isFurniture: false },
+
+      // ── SEÑALIZACIÓN / INFRAESTRUCTURA ────────────────────────────────────
+      'traffic light':  { name: 'Semáforo / Luz',    cat: 'infra', isFurniture: false },
+      'fire hydrant':   { name: 'Hidrante / Objeto', cat: 'infra', isFurniture: false },
+      'stop sign':      { name: 'Señal',             cat: 'infra', isFurniture: false },
+      'parking meter':  { name: 'Parquímetro',       cat: 'infra', isFurniture: false },
+
+      // ── ANIMALES (En interior se interpretan como objetos decorativos) ────
+      'bird':          { name: 'Ave / Decoración',   cat: 'decor', isFurniture: false },
+      'cat':           { name: 'Gato',               cat: 'animal', isFurniture: false },
+      'dog':           { name: 'Perro',              cat: 'animal', isFurniture: false },
+      'horse':         { name: 'Caballo / Figura',   cat: 'animal', isFurniture: false },
+      'sheep':         { name: 'Oveja / Figura',     cat: 'animal', isFurniture: false },
+      'cow':           { name: 'Vaca / Figura',      cat: 'animal', isFurniture: false },
+      'elephant':      { name: 'Elefante / Figura',  cat: 'animal', isFurniture: false },
+      'bear':          { name: 'Oso / Figura',       cat: 'animal', isFurniture: false },
+      'zebra':         { name: 'Zebra / Figura',     cat: 'animal', isFurniture: false },
+      'giraffe':       { name: 'Jirafa / Figura',    cat: 'animal', isFurniture: false },
+
+      // ── DEPORTES / OCIO ───────────────────────────────────────────────────
+      'frisbee':       { name: 'Frisbee / Disco',    cat: 'sport', isFurniture: false },
+      'skis':          { name: 'Esquís',             cat: 'sport', isFurniture: true  },
+      'snowboard':     { name: 'Snowboard',          cat: 'sport', isFurniture: true  },
+      'sports ball':   { name: 'Pelota / Balón',     cat: 'sport', isFurniture: false },
+      'kite':          { name: 'Cometa',             cat: 'sport', isFurniture: false },
+      'baseball bat':  { name: 'Bate / Bastón',      cat: 'sport', isFurniture: false },
+      'baseball glove':{ name: 'Guante Deportivo',   cat: 'sport', isFurniture: false },
+      'skateboard':    { name: 'Monopatín',          cat: 'sport', isFurniture: true  },
+      'surfboard':     { name: 'Tabla de Surf',      cat: 'sport', isFurniture: true  },
+      'tennis racket': { name: 'Raqueta',            cat: 'sport', isFurniture: false },
+    };
+
+    // Categorías que aportan densidad de desorden sobre superficies de trabajo
+    const CLUTTER_CATEGORIES = new Set(['tabletop', 'food', 'electronics', 'storage', 'sport']);
+    // Categorías que se consideran mobiliario o volumen desplazable
+    const VOLUME_CATEGORIES = new Set(['furniture', 'vehicle', 'storage']);
+
+    // Umbral de confianza adaptativo: objetos grandes necesitan menos confianza
+    function getAdaptiveThreshold(bbox) {
+      const area = bbox[2] * bbox[3];
+      // Objetos grandes (>15 000 px²) → 0.32, objetos muy pequeños (<2 000 px²) → 0.55
+      if (area > 15000) return 0.32;
+      if (area > 8000)  return 0.38;
+      if (area > 3000)  return 0.42;
+      return 0.50;
+    }
+
+    // Contador de detecciones acumuladas por clase para panel de estadísticas
+    let detectionStats = {};
+
+    function resizeCanvas() {
+      canvas.width = canvas.clientWidth;
+      canvas.height = canvas.clientHeight;
+    }
+    window.addEventListener('resize', resizeCanvas);
+
+    async function startSystem() {
+      startOverlay.style.display = 'none';
+      statusBanner.innerText = '📷 Accediendo a cámara nativa...';
+
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } },
+          audio: true
+        });
+        video.srcObject = stream;
+        await new Promise(r => video.onloadedmetadata = r);
+        resizeCanvas();
+        statusBanner.innerText = '⚡ Cámara activa. Cargando red neuronal (80 clases)...';
+      } catch (err) {
+        statusBanner.innerText = '⚠️ No se pudo acceder a la webcam física.';
+      }
+
+      // Cargar Modelo Neural On-Device — usamos mobilenet_v2 que es el de mayor precisión
+      try {
+        if (window.cocoSsd) {
+          netModel = await cocoSsd.load({ base: 'mobilenet_v2' });
+          const objectCount = Object.keys(SPATIAL_CLASS_MAP).length;
+          statusBanner.innerText = `✅ Red Neuronal Activa: ${objectCount} tipos de objeto · GPU WebGL`;
+          setTimeout(() => { statusBanner.style.display = 'none'; }, 5000);
+        }
+      } catch (e) {
+        statusBanner.innerText = '⚠️ Error cargando pesos neuronales.';
+      }
+
+      requestAnimationFrame(mainLoop);
+    }
+
+    // Bucle continuo a 30+ FPS
+    async function mainLoop(timestamp) {
+      const delta = timestamp - lastFrameTime;
+      lastFrameTime = timestamp;
+      frameCount++;
+
+      if (frameCount % 6 === 0) {
+        fps = Math.min(60, (1000 / delta)).toFixed(1);
+        fpsVal.innerText = fps;
+      }
+
+      // Lanzar inferencia si el modelo está listo y el frame anterior terminó
+      if (netModel && video.readyState === 4 && !isDetecting) {
+        isDetecting = true;
+        const t0 = performance.now();
+        // maxNumBoxes alto para capturar más objetos en escenas complejas
+        netModel.detect(video, 30).then(predictions => {
+          const tInf = Math.round(performance.now() - t0);
+          latVal.innerText = `${tInf} ms`;
+          processPredictions(predictions);
+          isDetecting = false;
+        }).catch(() => { isDetecting = false; });
+      }
+
+      renderARScene();
+      requestAnimationFrame(mainLoop);
+    }
+
+    /**
+     * TRANSFORMACIÓN GEOMÉTRICA EXACTA
+     * Compensa: object-fit: cover + scaleX(-1) mirror
+     */
+    function mapVideoToCanvas(box) {
+      const vw = video.videoWidth;
+      const vh = video.videoHeight;
+      const cw = canvas.width;
+      const ch = canvas.height;
+
+      const scale = Math.max(cw / vw, ch / vh);
+      const renderedW = vw * scale;
+      const renderedH = vh * scale;
+      const offsetX = (renderedW - cw) / 2;
+      const offsetY = (renderedH - ch) / 2;
+
+      const mirroredX = vw - (box[0] + box[2]);
+      return [
+        (mirroredX * scale) - offsetX,
+        (box[1] * scale) - offsetY,
+        box[2] * scale,
+        box[3] * scale
+      ];
+    }
+
+    /**
+     * PROCESAMIENTO DE PREDICCIONES CON FILTRO ADAPTATIVO
+     * - Acepta TODAS las 80 clases COCO
+     * - Umbral de confianza adaptativo por tamaño de caja
+     * - Supresión de cajas duplicadas solapantes (IoU)
+     * - Suavizado temporal anti-jitter
+     */
+    function processPredictions(predictions) {
+      // 1. Filtro adaptativo por tamaño + confianza
+      const valid = predictions.filter(p => {
+        const threshold = getAdaptiveThreshold(p.bbox);
+        if (p.score < threshold) return false;
+        // Si la clase no está en el mapa, aceptarla genéricamente
+        return true;
+      });
+
+      // 2. Mapear a coordenadas de canvas y enriquecer con metadatos espaciales
+      const mapped = valid.map(p => {
+        const info = SPATIAL_CLASS_MAP[p.class] || { name: p.class, cat: 'unknown', isFurniture: false };
+        const canvasCoords = mapVideoToCanvas(p.bbox);
+
+        // Registrar estadísticas acumuladas
+        detectionStats[info.name] = (detectionStats[info.name] || 0) + 1;
+
+        return {
+          class: p.class,
+          name: info.name,
+          cat: info.cat,
+          isFurniture: info.isFurniture,
+          isClutter: CLUTTER_CATEGORIES.has(info.cat),
+          score: p.score,
+          bbox: canvasCoords,
+          area: canvasCoords[2] * canvasCoords[3]
+        };
+      });
+
+      // 3. Supresión de cajas duplicadas solapantes (Non-Maximum Suppression simplificada)
+      const nmsResult = nonMaxSuppression(mapped, 0.45);
+
+      // 4. Suavizado temporal (EMA) para eliminar parpadeo entre frames
+      if (smoothedDetections.length === 0) {
+        smoothedDetections = nmsResult;
+      } else {
+        const alpha = 0.55; // Cuánto pesa el frame nuevo vs. el anterior
+        smoothedDetections = nmsResult.map(newItem => {
+          // Buscar coincidencia por clase Y proximidad espacial
+          const match = smoothedDetections.find(old =>
+            old.class === newItem.class &&
+            Math.abs(old.bbox[0] - newItem.bbox[0]) < newItem.bbox[2] * 0.5 &&
+            Math.abs(old.bbox[1] - newItem.bbox[1]) < newItem.bbox[3] * 0.5
+          );
+          if (!match) return newItem;
+          return {
+            ...newItem,
+            bbox: [
+              match.bbox[0] * (1 - alpha) + newItem.bbox[0] * alpha,
+              match.bbox[1] * (1 - alpha) + newItem.bbox[1] * alpha,
+              match.bbox[2] * (1 - alpha) + newItem.bbox[2] * alpha,
+              match.bbox[3] * (1 - alpha) + newItem.bbox[3] * alpha
+            ]
+          };
+        });
+      }
+
+      computeSpatialIntelligence(smoothedDetections);
+    }
+
+    /**
+     * Supresión de No-Máximos: elimina cajas solapadas con IoU > threshold
+     */
+    function nonMaxSuppression(items, iouThreshold) {
+      const sorted = [...items].sort((a, b) => b.score - a.score);
+      const kept = [];
+
+      for (const item of sorted) {
+        let dominated = false;
+        for (const existing of kept) {
+          if (computeIoU(item.bbox, existing.bbox) > iouThreshold) {
+            dominated = true;
+            break;
+          }
+        }
+        if (!dominated) kept.push(item);
+      }
+      return kept;
+    }
+
+    function computeIoU(a, b) {
+      const x1 = Math.max(a[0], b[0]);
+      const y1 = Math.max(a[1], b[1]);
+      const x2 = Math.min(a[0] + a[2], b[0] + b[2]);
+      const y2 = Math.min(a[1] + a[3], b[1] + b[3]);
+      const inter = Math.max(0, x2 - x1) * Math.max(0, y2 - y1);
+      const areaA = a[2] * a[3];
+      const areaB = b[2] * b[3];
+      return inter / (areaA + areaB - inter + 1e-6);
+    }
+
+    /**
+     * MOTOR DE REMODELACIÓN ESPACIAL v2 — Con categorías y heurísticas avanzadas
+     */
+    function computeSpatialIntelligence(items) {
+      const cw = canvas.width || 400;
+      const ch = canvas.height || 700;
+      const corridorLeft = cw * 0.28;
+      const corridorRight = cw * 0.72;
+      const totalArea = cw * ch;
+
+      let obstructingFurniture = [];
+      let totalOccupiedArea = 0;
+      let leftDensity = 0;
+      let rightDensity = 0;
+
+      // Agrupar por categoría
+      const categoryCounts = {};
+      const categoryAreas = {};
+
+      items.forEach(item => {
+        const [x, y, w, h] = item.bbox;
+        const area = w * h;
+        totalOccupiedArea += area;
+
+        // Densidad por zona
+        const centerX = x + w / 2;
+        if (centerX < cw / 2) leftDensity += area;
+        else rightDensity += area;
+
+        // Conteo por categoría
+        const cat = item.cat || 'unknown';
+        categoryCounts[cat] = (categoryCounts[cat] || 0) + 1;
+        categoryAreas[cat] = (categoryAreas[cat] || 0) + area;
+
+        // Comprobar si invade el corredor de paso
+        const boxRight = x + w;
+        const intersectsCorridor = !(boxRight < corridorLeft || x > corridorRight);
+        if (intersectsCorridor && item.isFurniture) {
+          obstructingFurniture.push(item);
+        }
+      });
+
+      // Cálculo de Métricas Reales
+      const clutterRatio = totalOccupiedArea / totalArea;
+      const clutterScore = Math.min(100, Math.round(clutterRatio * 140));
+      const totalDensity = leftDensity + rightDensity;
+      const harmonyScore = totalDensity > 0
+        ? Math.round(100 - (Math.abs(leftDensity - rightDensity) / totalDensity) * 60)
+        : 88;
+
+      const corridorClearance = obstructingFurniture.length === 0
+        ? 100
+        : Math.max(25, 100 - (obstructingFurniture.length * 35));
+
+      // Eficiencia ponderada por preset activo
+      let weights = { corridor: 0.45, harmony: 0.35, declutter: 0.20 };
+      if (currentPreset === 'declutter')  weights = { corridor: 0.25, harmony: 0.25, declutter: 0.50 };
+      if (currentPreset === 'harmony')    weights = { corridor: 0.20, harmony: 0.55, declutter: 0.25 };
+      if (currentPreset === 'staging')    weights = { corridor: 0.35, harmony: 0.40, declutter: 0.25 };
+
+      const efficiencyScore = Math.round(
+        corridorClearance * weights.corridor +
+        harmonyScore * weights.harmony +
+        (100 - clutterScore) * weights.declutter
+      );
+
+      // Actualizar UI — Métricas
+      document.getElementById('effScoreText').innerText = `${efficiencyScore}%`;
+      const offset = 113 - (113 * efficiencyScore) / 100;
+      document.getElementById('effGaugeProg').style.strokeDashoffset = offset;
+
+      document.getElementById('valHarmony').innerText = `${harmonyScore}%`;
+      document.getElementById('barHarmony').style.width = `${harmonyScore}%`;
+
+      document.getElementById('valTraffic').innerText = `${corridorClearance}%`;
+      document.getElementById('barTraffic').style.width = `${corridorClearance}%`;
+
+      document.getElementById('valClutter').innerText = `${clutterScore}%`;
+      document.getElementById('barClutter').style.width = `${clutterScore}%`;
+
+      // Sugerencias Dinámicas Inteligentes basadas en lo detectado
+      const tipsDiv = document.getElementById('suggestionsList');
+      const tips = [];
+
+      // 1. Resumen de lo detectado
+      const uniqueNames = [...new Set(items.map(i => i.name))];
+      if (uniqueNames.length > 0) {
+        tips.push(`🔍 Detectados ${items.length} objetos: ${uniqueNames.slice(0, 5).join(', ')}${uniqueNames.length > 5 ? ` (+${uniqueNames.length - 5} más)` : ''}`);
+      }
+
+      // 2. Obstrucciones del corredor
+      if (obstructingFurniture.length > 0) {
+        const names = obstructingFurniture.map(o => o.name).join(', ');
+        tips.push(`⚠️ ${names} — invade${obstructingFurniture.length > 1 ? 'n' : ''} el corredor central. Retirar para +${Math.min(40, obstructingFurniture.length * 15)}% fluidez.`);
+      } else if (items.length > 0) {
+        tips.push(`✅ Corredor de paso libre y despejado.`);
+      }
+
+      // 3. Desorden en superficies
+      const clutterItems = items.filter(i => i.isClutter);
+      if (clutterItems.length >= 3) {
+        const clutterNames = [...new Set(clutterItems.map(i => i.name))].slice(0, 3).join(', ');
+        tips.push(`🧹 Exceso de objetos en superficies (${clutterNames}). Organizar reduce fatiga visual un ~${Math.min(30, clutterItems.length * 8)}%.`);
+      }
+
+      // 4. Equilibrio izq/der
+      if (harmonyScore < 65) {
+        const heavierSide = leftDensity > rightDensity ? "izquierdo" : "derecho";
+        tips.push(`⚖️ Sobrecarga visual en lado ${heavierSide}. Redistribuir mobiliario mejora armonía +${70 - harmonyScore}%.`);
+      }
+
+      // 5. Sugerencias por preset
+      if (currentPreset === 'declutter' && clutterScore > 40) {
+        tips.push(`🗑️ Modo Minimalista: retirar al menos ${Math.ceil(clutterItems.length / 2)} objetos de superficies.`);
+      }
+      if (currentPreset === 'staging' && items.some(i => i.cat === 'decor')) {
+        tips.push(`🏡 Home Staging: buenos elementos decorativos detectados. Centrar plantas y retirar objetos personales.`);
+      }
+
+      if (tips.length === 0) {
+        tips.push(`• Apunte hacia el mobiliario para analizar la distribución del espacio.`);
+      }
+
+      tipsDiv.innerHTML = tips.map(t => `<div>• ${t}</div>`).join('');
+    }
+
+    /**
+     * RENDERIZADO DEL LIENZO AR CON COLORES POR CATEGORÍA
+     */
+    const CATEGORY_COLORS = {
+      furniture:   { stroke: '#00F0FF', fill: 'rgba(0, 240, 255, 0.10)',   icon: '🪑' },
+      electronics: { stroke: '#818CF8', fill: 'rgba(129, 140, 248, 0.10)', icon: '💻' },
+      tabletop:    { stroke: '#FBBF24', fill: 'rgba(251, 191, 36, 0.08)', icon: '☕' },
+      storage:     { stroke: '#A78BFA', fill: 'rgba(167, 139, 250, 0.10)', icon: '🎒' },
+      decor:       { stroke: '#34D399', fill: 'rgba(52, 211, 153, 0.10)', icon: '🌿' },
+      food:        { stroke: '#FB923C', fill: 'rgba(251, 146, 60, 0.08)', icon: '🍕' },
+      person:      { stroke: '#60A5FA', fill: 'rgba(96, 165, 250, 0.10)', icon: '👤' },
+      vehicle:     { stroke: '#F472B6', fill: 'rgba(244, 114, 182, 0.10)', icon: '🏍️' },
+      animal:      { stroke: '#4ADE80', fill: 'rgba(74, 222, 128, 0.10)', icon: '🐾' },
+      sport:       { stroke: '#22D3EE', fill: 'rgba(34, 211, 238, 0.10)', icon: '⚽' },
+      infra:       { stroke: '#94A3B8', fill: 'rgba(148, 163, 184, 0.08)', icon: '🚦' },
+      unknown:     { stroke: '#E2E8F0', fill: 'rgba(226, 232, 240, 0.08)', icon: '❓' },
+    };
+
+    function renderARScene() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      const cw = canvas.width;
+      const ch = canvas.height;
+      const corridorLeft = cw * 0.28;
+      const corridorRight = cw * 0.72;
+
+      // Dibujar zona de corredor como referencia sutil
+      if (smoothedDetections.length > 0) {
+        ctx.fillStyle = 'rgba(16, 185, 129, 0.04)';
+        ctx.fillRect(corridorLeft, 0, corridorRight - corridorLeft, ch);
+        ctx.strokeStyle = 'rgba(16, 185, 129, 0.15)';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([8, 6]);
+        ctx.beginPath();
+        ctx.moveTo(corridorLeft, 0); ctx.lineTo(corridorLeft, ch);
+        ctx.moveTo(corridorRight, 0); ctx.lineTo(corridorRight, ch);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+
+      smoothedDetections.forEach(item => {
+        const [x, y, w, h] = item.bbox;
+        const centerX = x + w / 2;
+        const boxRight = x + w;
+        const isInCorridor = !(boxRight < corridorLeft || x > corridorRight);
+
+        // Color por categoría, o ámbar si obstruye el corredor
+        const catColor = CATEGORY_COLORS[item.cat] || CATEGORY_COLORS.unknown;
+        const isObstructing = isInCorridor && item.isFurniture;
+        const strokeColor = isObstructing ? '#F59E0B' : catColor.stroke;
+        const fillColor = isObstructing ? 'rgba(245, 158, 11, 0.12)' : catColor.fill;
+        const icon = catColor.icon;
+
+        // 1. Caja Delimitadora con esquinas redondeadas
+        ctx.strokeStyle = strokeColor;
+        ctx.lineWidth = 2.5;
+        ctx.strokeRect(x, y, w, h);
+
+        // Relleno holográfico
+        ctx.fillStyle = fillColor;
+        ctx.fillRect(x, y, w, h);
+
+        // 2. Marcas de esquina (efecto visor AR)
+        const cornerLen = Math.min(15, w * 0.15, h * 0.15);
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = strokeColor;
+        ctx.beginPath();
+        // Sup-Izq
+        ctx.moveTo(x, y + cornerLen); ctx.lineTo(x, y); ctx.lineTo(x + cornerLen, y);
+        // Sup-Der
+        ctx.moveTo(x + w - cornerLen, y); ctx.lineTo(x + w, y); ctx.lineTo(x + w, y + cornerLen);
+        // Inf-Der
+        ctx.moveTo(x + w, y + h - cornerLen); ctx.lineTo(x + w, y + h); ctx.lineTo(x + w - cornerLen, y + h);
+        // Inf-Izq
+        ctx.moveTo(x + cornerLen, y + h); ctx.lineTo(x, y + h); ctx.lineTo(x, y + h - cornerLen);
+        ctx.stroke();
+
+        // 3. Etiqueta con icono de categoría y confianza
+        const labelText = `${icon} ${item.name} ${Math.round(item.score * 100)}%`;
+        ctx.font = 'bold 11px sans-serif';
+        const textWidth = ctx.measureText(labelText).width;
+
+        const labelX = x;
+        const labelY = Math.max(0, y - 22);
+
+        ctx.fillStyle = 'rgba(8, 10, 13, 0.88)';
+        const labelPadH = textWidth + 14;
+        const labelPadV = 19;
+        ctx.fillRect(labelX, labelY, labelPadH, labelPadV);
+        ctx.strokeStyle = strokeColor;
+        ctx.lineWidth = 1;
+        ctx.strokeRect(labelX, labelY, labelPadH, labelPadV);
+
+        ctx.fillStyle = strokeColor;
+        ctx.fillText(labelText, labelX + 5, labelY + 14);
+
+        // 4. Vector AR de Remodelación: para muebles que obstruyen el corredor
+        if (isObstructing) {
+          const targetX = centerX < cw / 2 ? corridorLeft - w - 10 : corridorRight + 10;
+          const targetY = y;
+
+          // Caja proyectada (destino optimizado)
+          ctx.strokeStyle = '#10B981';
+          ctx.lineWidth = 2.5;
+          ctx.setLineDash([6, 4]);
+          ctx.strokeRect(targetX, targetY, w, h);
+          ctx.setLineDash([]);
+
+          // Relleno verde sutil en destino
+          ctx.fillStyle = 'rgba(16, 185, 129, 0.08)';
+          ctx.fillRect(targetX, targetY, w, h);
+
+          // Vector de remodelación (flecha)
+          const c1 = { x: centerX, y: y + h / 2 };
+          const c2 = { x: targetX + w / 2, y: targetY + h / 2 };
+
+          ctx.beginPath();
+          ctx.moveTo(c1.x, c1.y);
+          ctx.lineTo(c2.x, c2.y);
+          ctx.strokeStyle = '#10B981';
+          ctx.lineWidth = 3;
+          ctx.stroke();
+
+          // Cabeza de flecha
+          const angle = Math.atan2(c2.y - c1.y, c2.x - c1.x);
+          const aLen = 12;
+          ctx.beginPath();
+          ctx.moveTo(c2.x, c2.y);
+          ctx.lineTo(c2.x - aLen * Math.cos(angle - Math.PI / 6), c2.y - aLen * Math.sin(angle - Math.PI / 6));
+          ctx.moveTo(c2.x, c2.y);
+          ctx.lineTo(c2.x - aLen * Math.cos(angle + Math.PI / 6), c2.y - aLen * Math.sin(angle + Math.PI / 6));
+          ctx.stroke();
+
+          ctx.fillStyle = 'rgba(16, 185, 129, 0.9)';
+          ctx.fillRect(targetX, Math.max(0, targetY - 18), 130, 16);
+          ctx.fillStyle = '#FFFFFF';
+          ctx.font = 'bold 10px sans-serif';
+          ctx.fillText('🎯 Despejar Corredor', targetX + 6, Math.max(12, targetY - 6));
+        }
+      });
+
+      // 5. Contador flotante de objetos detectados (esquina sup-izq del canvas)
+      if (smoothedDetections.length > 0) {
+        const countText = `${smoothedDetections.length} obj · ${[...new Set(smoothedDetections.map(d => d.cat))].length} categorías`;
+        ctx.font = 'bold 10px sans-serif';
+        const tw = ctx.measureText(countText).width;
+        ctx.fillStyle = 'rgba(8, 10, 13, 0.7)';
+        ctx.fillRect(8, ch - 28, tw + 16, 20);
+        ctx.fillStyle = '#94A3B8';
+        ctx.fillText(countText, 16, ch - 14);
+      }
+    }
+
+    function toggleMetricsPanel() {
+      metricsPanel.classList.toggle('expanded');
+      const isExp = metricsPanel.classList.contains('expanded');
+      document.getElementById('chevronIcon').innerText = isExp ? '▼' : '▲';
+      document.getElementById('panelHint').innerText = isExp ? 'Toca para minimizar' : 'Toca para ver desglose de remodelación';
+    }
+
+    function selectPreset(presetKey, element) {
+      currentPreset = presetKey;
+      document.querySelectorAll('.preset-pill').forEach(el => el.classList.remove('active'));
+      element.classList.add('active');
+      computeSpatialIntelligence(smoothedDetections);
+    }
+
+    function toggleRecording() {
+      isRecording = !isRecording;
+      const device = document.getElementById('deviceContainer');
+
+      if (isRecording) {
+        device.classList.add('recording');
+        recStatus.innerText = 'REC';
+        recTimer.style.display = 'inline';
+        recStartTime = Date.now();
+        recTimerInterval = setInterval(() => {
+          const elapsedSec = Math.floor((Date.now() - recStartTime) / 1000);
+          const mins = String(Math.floor(elapsedSec / 60)).padStart(2, '0');
+          const secs = String(elapsedSec % 60).padStart(2, '0');
+          recTimer.innerText = `${mins}:${secs}`;
+        }, 500);
+
+        if (video.srcObject) {
+          try {
+            recordedChunks = [];
+            mediaRecorder = new MediaRecorder(video.srcObject);
+            mediaRecorder.ondataavailable = e => { if (e.data.size > 0) recordedChunks.push(e.data); };
+            mediaRecorder.start();
+          } catch(e) {}
+        }
+      } else {
+        device.classList.remove('recording');
+        recStatus.innerText = 'STANDBY';
+        recTimer.style.display = 'none';
+        clearInterval(recTimerInterval);
+
+        if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+          mediaRecorder.stop();
+          mediaRecorder.onstop = () => {
+            const blob = new Blob(recordedChunks, { type: 'video/webm' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `Sesion_Remodelacion_${Date.now()}.webm`;
+            a.click();
+          };
+        }
+      }
+    }
+  </script>
+</body>
+</html>

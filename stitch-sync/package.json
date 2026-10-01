@@ -1,0 +1,14 @@
+{
+  "name": "stitch-sync-bridge",
+  "version": "1.0.0",
+  "description": "Integration bridge to Google Stitch API for importing UI components, screen layouts and design tokens",
+  "main": "sync-stitch-design.js",
+  "scripts": {
+    "sync-design": "node sync-stitch-design.js"
+  },
+  "dependencies": {
+    "@google/stitch-sdk": "^0.1.0",
+    "dotenv": "^16.4.5",
+    "axios": "^1.7.2"
+  }
+}

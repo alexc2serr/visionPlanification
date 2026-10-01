@@ -1,0 +1,30 @@
+﻿# Entorno virtual y dependencias
+.venv/
+env/
+venv/
+node_modules/
+__pycache__/
+*.pyc
+
+# Datasets descargados pesados
+training/dataset/
+dataset/
+*.zip
+*.tar.gz
+
+# Archivos temporales de entrenamiento y ejecuciones locales
+training/runs/
+runs/
+.gradle/
+build/
+app/build/
+local.properties
+.idea/
+.vscode/
+*.log
+
+# Mantener los pesos preentrenados y exportados
+!models/best.pt
+!models/best.onnx
+
+stitch-sync/.env

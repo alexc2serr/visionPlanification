@@ -1,0 +1,27 @@
+# ==============================================================================
+# VisionPlanification - Dependencias de Entrenamiento y Exportacion
+# ==============================================================================
+
+# Framework de deteccion de objetos y computer vision
+ultralytics>=8.1.0
+
+# Deep Learning con PyTorch (Compatible con CPU y CUDA en Windows)
+torch>=2.0.0
+torchvision>=0.15.0
+
+# Procesamiento de imagen y vision artificial
+opencv-python>=4.8.0
+pillow>=10.0.0
+numpy>=1.23.0,<2.0.0
+
+# Formatos de configuracion, datos y metricas
+pyyaml>=6.0
+tqdm>=4.66.0
+matplotlib>=3.7.0
+pandas>=2.0.0
+
+# Exportacion a formatos ONNX, TensorFlow, TFLite y TensorFlow.js
+onnx>=1.15.0
+onnxruntime>=1.16.0
+tensorflow>=2.15.0,<2.16.0
+tensorflowjs>=4.17.0

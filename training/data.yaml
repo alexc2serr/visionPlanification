@@ -1,0 +1,26 @@
+# ==============================================================================
+# VisionPlanification - Configuracion de Dataset para YOLOv8
+# Deteccion de Mobiliario y Objetos de Oficina para Remodelacion Espacial
+# ==============================================================================
+
+# Ruta raiz del dataset (puede ser relativa al archivo data.yaml o absoluta)
+path: ./dataset
+
+# Subrutas relativas a 'path' para las particiones de entrenamiento, validacion y test
+train: images/train
+val: images/val
+test: images/test # Opcional: evaluacion final
+
+# Numero total de clases personalizadas
+nc: 8
+
+# Mapeo de identificadores y nombres de clases
+names:
+  0: cajonera
+  1: casco_de_moto
+  2: mochila
+  3: pantalla
+  4: portatil
+  5: silla_oficina
+  6: mesa_escritorio
+  7: separador

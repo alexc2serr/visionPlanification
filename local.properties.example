@@ -1,0 +1,4 @@
+## Stitch API Key configuration
+# Provide your Stitch API key here. It will be injected into BuildConfig automatically.
+stitch.api.key=YOUR_STITCH_API_KEY_HERE
+sdk.dir=/path/to/android/sdk

@@ -1,0 +1,107 @@
+{
+  "projectId": "stitch-vision-remodel-v1",
+  "version": "2026.10-lts",
+  "theme": {
+    "colors": {
+      "primaryAccent": "#00F0FF",
+      "secondaryAccent": "#7928CA",
+      "surfaceDark": "#0D0F12",
+      "surfaceGlass": "#1A1F26CC",
+      "textPrimary": "#FFFFFF",
+      "textSecondary": "#94A3B8",
+      "successGreen": "#10B981",
+      "warningAmber": "#F59E0B",
+      "recordRed": "#EF4444",
+      "arVectorWall": "#22D3EE99",
+      "arVectorFloor": "#A855F799",
+      "arVectorFurniture": "#10B981B3"
+    },
+    "glassmorphism": {
+      "backgroundAlpha": 0.72,
+      "blurRadiusDp": 24,
+      "borderColor": "#FFFFFF26",
+      "borderWidthDp": 1.2
+    },
+    "typography": {
+      "telemetryMono": {
+        "sizeSp": 11,
+        "weight": "SemiBold",
+        "letterSpacingSp": 0.5
+      },
+      "hudTitle": {
+        "sizeSp": 16,
+        "weight": "Bold",
+        "letterSpacingSp": 0.15
+      },
+      "bodySmall": {
+        "sizeSp": 12,
+        "weight": "Normal",
+        "letterSpacingSp": 0.25
+      },
+      "metricScoreLarge": {
+        "sizeSp": 28,
+        "weight": "ExtraBold",
+        "letterSpacingSp": -0.5
+      }
+    }
+  },
+  "components": {
+    "telemetryBadge": {
+      "position": "TopLeft",
+      "backgroundColor": "#0D0F12B3",
+      "textColor": "#F8FAFC",
+      "fpsNormalColor": "#10B981",
+      "fpsWarningColor": "#F59E0B"
+    },
+    "recordingIndicator": {
+      "activePulseColor": "#EF4444",
+      "idleColor": "#64748B",
+      "durationTextColor": "#F8FAFC"
+    },
+    "remodelControlBar": {
+      "pillActiveColor": "#00F0FF",
+      "pillInactiveColor": "#1E293B99",
+      "glowColor": "#00F0FF66",
+      "presets": [
+        {
+          "id": "flow",
+          "label": "Optimizar Flujo",
+          "icon": "route",
+          "prompt": "Maximize open circulation paths"
+        },
+        {
+          "id": "declutter",
+          "label": "Minimalista",
+          "icon": "clean_hands",
+          "prompt": "Eliminate visual clutter and optimize space"
+        },
+        {
+          "id": "harmony",
+          "label": "Armonía Estética",
+          "icon": "palette",
+          "prompt": "Optimize color harmony and proportions"
+        },
+        {
+          "id": "staging",
+          "label": "Home Staging",
+          "icon": "weekend",
+          "prompt": "Modern real estate showcase staging"
+        }
+      ]
+    },
+    "floatingMetricsPanel": {
+      "defaultState": "Collapsed",
+      "efficiencyGaugeColor": "#00F0FF",
+      "aestheticGaugeColor": "#F43F5E",
+      "trafficGaugeColor": "#10B981",
+      "clutterGaugeColor": "#F59E0B",
+      "cornerRadiusDp": 28
+    },
+    "arOverlay": {
+      "wallMaskTint": "#00F0FF4D",
+      "floorMaskTint": "#A855F74D",
+      "furnitureGuidanceColor": "#10B98180",
+      "arrowGlowColor": "#00F0FF"
+    }
+  }
+}
